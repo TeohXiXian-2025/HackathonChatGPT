@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pdfplumber
+pdfminer.six
+python-multipart
+python-dotenv
+# Add any other specific RAG/LLM libraries you are using, like langchain or openai
