@@ -7,14 +7,8 @@ Members: \
 4.Tan Wei Feng\
 5.Lim Jie Shin
 
-In Peninsular Malaysia, floods happen almost every year. Having a Chat AI to answer questions regarding floods will be definately helpful. 
 
-**SmartPPS: BANTU BANJIR** is here to help to encounter issues and questions regarding floods.
-
-## DATA SET
-Due to time limit and avoiding copyright issues for scraping government data, we use a set of mock data for our AI to run.
-
-## JAMAIBASE
+In Peninsular Malaysia, floods happen almost every year. Having a Chat AI to answer questions regarding floods will be definately helpful.
 **📖 Overview**
 
 This project is a Flood Safety Assistant designed to support vulnerable communities in Malaysia during flood emergencies. It uses an embedded Large Language Model (LLM) to generate structured, empathetic responses based on user queries. The system prioritizes accessibility, safety, and clarity — especially for elderly, OKU, infants, and pets.
@@ -33,6 +27,13 @@ This project is a Flood Safety Assistant designed to support vulnerable communit
 
 **Rationale (why other PPS options were rejected)
 
+
+**SmartPPS: BANTU BANJIR** is here to help to encounter issues and questions regarding floods.
+
+## DATA SET
+Due to time limit and avoiding copyright issues for scraping government data, we use a set of mock data for our AI to run.
+
+## JAMAIBASE
 **Rumours detector
 
 **All structured responses are managed in Jama Connect under tables like english_prompt and malay_prompt.**
