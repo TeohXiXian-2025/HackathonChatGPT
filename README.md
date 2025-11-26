@@ -8,7 +8,7 @@ Members: \
 5.Lim Jie Shin
 
 
-In Peninsular Malaysia, floods happen almost every year. Having a Chat AI to answer questions regarding floods will be definately helpful.
+In Peninsular Malaysia, floods happen almost every year. Having a Chat AI to answer questions regarding floods will be definately helpful.\
 **📖 Overview**
 
 This project is a Flood Safety Assistant designed to support vulnerable communities in Malaysia during flood emergencies. It uses an embedded Large Language Model (LLM) to generate structured, empathetic responses based on user queries. The system prioritizes accessibility, safety, and clarity — especially for elderly, OKU, infants, and pets.
