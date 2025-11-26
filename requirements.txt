@@ -3,4 +3,3 @@ jamaibase
 python-dotenv
 pycountry
 fastapi
-flask-cors

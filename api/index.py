@@ -6,7 +6,6 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
 
 # 1. Configuration
 PROJECT_ID = os.getenv("JAMAI_PROJECT_ID")
