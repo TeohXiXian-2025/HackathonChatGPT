@@ -1,13 +1,11 @@
 from flask import Flask, request, jsonify
 from jamaibase import JamAI, types as p
-from flask_cors import CORS 
 import os
 import sys
 import re
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app) # Ensures cross-origin requests are allowed
 
 # 1. Configuration
 PROJECT_ID = os.getenv("JAMAI_PROJECT_ID")
@@ -20,70 +18,119 @@ jamai = JamAI(
     token=API_KEY 
 )
 
-# 💡 FIX 1: Root GET route for health checks (handles /api/ and avoids the root 404)
-@app.route('/api/', methods=['GET'])
-def api_root():
-    return jsonify({"status": "API is operational", "primary_endpoint": "/api/analyze (POST)"}), 200
-
-# 💡 FIX 2: Define both trailing slash and non-trailing slash for POST
 @app.route('/api/analyze', methods=['POST'])
-@app.route('/api/analyze/', methods=['POST'])
 def analyze_route():
     try:
         data = request.json
         user_input = data.get('user_input')
         location_details = data.get('location_details')
-        row_id_to_fetch = data.get('row_id')
+        row_id_to_fetch = data.get('row_id') 
 
         if not user_input and not row_id_to_fetch:
             return jsonify({"error": "User input or row_id is required"}), 400
 
         # =========================================================
-        # MODE 2: FETCH STATUS (The polling request from the client)
+        # MODE 2: FETCH STATUS (Polling)
         # =========================================================
         if row_id_to_fetch:
             print(f"DEBUG: Fetching Row ID: {row_id_to_fetch}", file=sys.stderr)
             
-            row_response = jamai.table.get_table_row(
-                p.TableType.ACTION,
-                TABLE_ID,
-                row_id_to_fetch
-            )
-            
-            final_row = row_response.get("row")
+            try:
+                # 1. Fetch the row with specific columns
+                row_response = jamai.table.get_table_row(
+                    p.TableType.ACTION,
+                    TABLE_ID,
+                    row_id_to_fetch,
+                    columns=["route_analysis", "selected_pps", "decoded_tags"]
+                )
 
-            if final_row:
+                # --- UNIVERSAL DATA NORMALIZER ---
+                # Converts Pydantic models, Objects, or Dicts into a standard Dict
+                def normalize_to_dict(obj):
+                    if isinstance(obj, dict):
+                        return obj
+                    if hasattr(obj, "to_dict"): # Common in SDKs
+                        return obj.to_dict()
+                    if hasattr(obj, "model_dump"): # Pydantic v2
+                        return obj.model_dump()
+                    if hasattr(obj, "dict"): # Pydantic v1
+                        return obj.dict()
+                    if hasattr(obj, "__dict__"): # Generic Object
+                        return obj.__dict__
+                    return {}
+
+                # 2. Extract the actual row data
+                full_response_dict = normalize_to_dict(row_response)
                 
-                if 'route_analysis' in final_row:
+                # Search strategy: Is the data at top level? Or inside 'row'?
+                row_data = {}
+                if "route_analysis" in full_response_dict:
+                    row_data = full_response_dict
+                elif "row" in full_response_dict:
+                    row_data = normalize_to_dict(full_response_dict["row"])
+                else:
+                    # Last ditch: Print keys to debug log if we fail
+                    print(f"DEBUG: Unknown structure. Keys found: {list(full_response_dict.keys())}", file=sys.stderr)
+
+                # 3. Helper to extract cell values safely
+                def get_cell_val(data_dict, key):
+                    if not data_dict: return None
+                    cell = data_dict.get(key)
+                    if not cell: return None
                     
-                    analysis_val = final_row.get("route_analysis", {}).get("value")
-                    pps_val = final_row.get("selected_pps", {}).get("value")
+                    # Cell might be a dict {'value': '...'} or just the value
+                    if isinstance(cell, dict):
+                        return cell.get("value")
+                    # If it's an object with .value
+                    if hasattr(cell, "value"):
+                        return cell.value
+                    return cell # fallback (maybe it's the raw string)
 
-                    if analysis_val and pps_val:
-                        
-                        # --- CLEANUP: Limit selected_pps to just the name (Heuristic) ---
-                        clean_pps = pps_val
-                        if len(clean_pps) > 50: 
-                            match = re.search(r"(Shelter\s+\d+|[\w\s]+(Hall|Center|Centre|School|Club))", clean_pps, re.IGNORECASE)
-                            if match:
-                                clean_pps = match.group(0).strip()
-                            else:
-                                clean_pps = clean_pps.split('.')[0].split(',')[0].strip()
+                # 4. Extract content
+                analysis_text = get_cell_val(row_data, "route_analysis")
+                pps_text = get_cell_val(row_data, "selected_pps")
+                tags_text = get_cell_val(row_data, "decoded_tags")
 
-                        return jsonify({
-                            "success": True,
-                            "status": "complete",
-                            "analysis": analysis_val, 
-                            "tags": final_row.get("decoded_tags", {}).get("value"),
-                            "selected_pps": clean_pps
-                        }), 200
-            
-            print(f"DEBUG: Row ID {row_id_to_fetch} still pending.", file=sys.stderr)
-            return jsonify({
-                "success": False, 
-                "status": "pending", 
-                "row_id": row_id_to_fetch
-            }), 200
+                # 5. Check completion
+                if analysis_text and pps_text:
+                    
+                    # --- CLEANUP: Limit selected_pps to just the name ---
+                    clean_pps = pps_text
+                    
+                    # Heuristic: If it looks like a sentence, split it.
+                    # We look for "is [Name]" or "PPS: [Name]" or just take the whole thing if short.
+                    if len(clean_pps) > 50: 
+                        # Regex to find "Shelter X" or "Hall Y"
+                        match = re.search(r"(Shelter\s+\d+|[\w\s]+(Hall|Center|Centre|School|Club))", clean_pps, re.IGNORECASE)
+                        if match:
+                            clean_pps = match.group(0).strip()
+                        else:
+                            # Fallback: Split by common separators
+                            clean_pps = clean_pps.split('.')[0].split(',')[0] # Take first phrase
+
+                    return jsonify({
+                        "success": True,
+                        "status": "complete",
+                        "analysis": analysis_text,
+                        "tags": tags_text if tags_text else "",
+                        "selected_pps": clean_pps
+                    }), 200
+                
+                # Data pending
+                return jsonify({
+                    "success": False, 
+                    "status": "pending", 
+                    "row_id": row_id_to_fetch
+                }), 200
+
+            except Exception as e:
+                print(f"ERROR in polling loop: {e}", file=sys.stderr)
+                return jsonify({
+                    "success": False, 
+                    "status": "pending", 
+                    "error_details": str(e),
+                    "row_id": row_id_to_fetch
+                }), 200
 
         # =========================================================
         # MODE 1: SUBMIT JOB
@@ -132,8 +179,5 @@ def analyze_route():
         print(f"FATAL ERROR in analyze_route: {e}", file=sys.stderr)
         return jsonify({"error": str(e)}), 500
 
-# 💡 FIX 3: Catch-all GET route for all other paths (e.g., favicon.ico)
-@app.route('/api/<path:subpath>', methods=['GET'])
-def api_catch_all_get(subpath):
-    # This prevents unhandled 404 errors in Vercel's console for accidental GET requests
-    return jsonify({"error": f"Path Not Found (404): The requested URL /api/{subpath} is not supported. Please use POST to /api/analyze."}), 404
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
