@@ -3,7 +3,7 @@ from jamaibase import JamAI, types as p
 import os, sys, re
 from datetime import datetime
 
-# Initialize Flask app
+# Initialize Flask app once
 app = Flask(__name__)
 
 # 1. Configuration
@@ -20,7 +20,7 @@ jamai = JamAI(
 @app.route('/api/analyze', methods=['POST'])
 def analyze_route():
     try:
-        data = request.json
+        data = request.json or {}
         user_input = data.get('user_input')
         location_details = data.get('location_details')
         row_id_to_fetch = data.get('row_id')
