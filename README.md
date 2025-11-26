@@ -20,7 +20,7 @@ Due to time limit and avoiding copyright issues for scraping government data, we
 
 ## FRONTEND
 
-## Authors
+## AUTHORS
 
 - [@iztzx](https://github.com/iztzx)
 - [@JieShin27](https://github.com/JieShin27)
@@ -28,7 +28,7 @@ Due to time limit and avoiding copyright issues for scraping government data, we
 - [@TeohXiXian-2025](https://github.com/TeohXiXian-2025)
 - [@TWF06](https://github.com/TWF06)
 
-## Demo
+## SLIDE AND DEMO
 
 https://www.canva.com/design/DAG5rgvK9O0/sVuH6uLgxUhIjR6qDCZqWQ/view
 
