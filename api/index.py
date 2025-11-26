@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
+CORS(app) # Enables CORS for all domains
 
 # 1. Configuration
 PROJECT_ID = os.getenv("JAMAI_PROJECT_ID")
@@ -20,19 +20,20 @@ jamai = JamAI(
     token=API_KEY 
 )
 
-# FIX 1: Root GET route (handles browser direct access)
+# 💡 FIX 1: Root GET route for health checks and browser access
 @app.route('/api/', methods=['GET'])
 def api_root():
     return jsonify({"status": "API is operational", "primary_endpoint": "/api/analyze (POST)"}), 200
 
-# 💡 FIX 2: Only define the route WITHOUT a trailing slash. Flask handles the redirect.
+# 💡 FIX 2: Define both trailing slash and non-trailing slash for POST
 @app.route('/api/analyze', methods=['POST'])
+@app.route('/api/analyze/', methods=['POST'])
 def analyze_route():
     try:
         data = request.json
         user_input = data.get('user_input')
         location_details = data.get('location_details')
-        row_id_to_fetch = data.get('row_id')
+        row_id_to_fetch = data.get('row_id') # Key for polling request
 
         if not user_input and not row_id_to_fetch:
             return jsonify({"error": "User input or row_id is required"}), 400
@@ -43,6 +44,7 @@ def analyze_route():
         if row_id_to_fetch:
             print(f"DEBUG: Fetching Row ID: {row_id_to_fetch}", file=sys.stderr)
             
+            # Use positional arguments for get_table_row
             row_response = jamai.table.get_table_row(
                 p.TableType.ACTION,
                 TABLE_ID,
@@ -55,11 +57,14 @@ def analyze_route():
                 
                 if 'route_analysis' in final_row:
                     
-                    # Check for the *actual content* of the required analysis fields
-                    if final_row.get("route_analysis", {}).get("value") and final_row.get("selected_pps", {}).get("value"):
+                    # Check for completion by looking for non-empty content in the inner ["value"] key
+                    analysis_val = final_row.get("route_analysis", {}).get("value")
+                    pps_val = final_row.get("selected_pps", {}).get("value")
+
+                    if analysis_val and pps_val:
                         
-                        # --- CLEANUP: Limit selected_pps to just the name ---
-                        clean_pps = final_row["selected_pps"]["value"]
+                        # --- CLEANUP: Limit selected_pps to just the name (Heuristic) ---
+                        clean_pps = pps_val
                         if len(clean_pps) > 50: 
                             match = re.search(r"(Shelter\s+\d+|[\w\s]+(Hall|Center|Centre|School|Club))", clean_pps, re.IGNORECASE)
                             if match:
@@ -70,7 +75,7 @@ def analyze_route():
                         return jsonify({
                             "success": True,
                             "status": "complete",
-                            "analysis": final_row["route_analysis"]["value"], 
+                            "analysis": analysis_val, 
                             "tags": final_row.get("decoded_tags", {}).get("value"),
                             "selected_pps": clean_pps
                         }), 200
@@ -83,7 +88,7 @@ def analyze_route():
             }), 200
 
         # =========================================================
-        # MODE 1: SUBMIT JOB
+        # MODE 1: SUBMIT JOB (The initial request)
         # =========================================================
         else:
             print("DEBUG: Submitting new job...", file=sys.stderr)
@@ -119,6 +124,7 @@ def analyze_route():
 
             print(f"DEBUG: Job Submitted. Row ID: {row_id}", file=sys.stderr)
 
+            # Return job ID immediately (fast response)
             return jsonify({
                 "success": True, 
                 "status": "submitted", 
