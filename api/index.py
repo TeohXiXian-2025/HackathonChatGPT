@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app) # Enables CORS for all domains
+CORS(app) # Ensures cross-origin requests are allowed
 
 # 1. Configuration
 PROJECT_ID = os.getenv("JAMAI_PROJECT_ID")
@@ -20,7 +20,7 @@ jamai = JamAI(
     token=API_KEY 
 )
 
-# 💡 FIX 1: Root GET route for health checks and browser access
+# 💡 FIX 1: Root GET route for health checks (handles /api/ and avoids the root 404)
 @app.route('/api/', methods=['GET'])
 def api_root():
     return jsonify({"status": "API is operational", "primary_endpoint": "/api/analyze (POST)"}), 200
@@ -33,7 +33,7 @@ def analyze_route():
         data = request.json
         user_input = data.get('user_input')
         location_details = data.get('location_details')
-        row_id_to_fetch = data.get('row_id') # Key for polling request
+        row_id_to_fetch = data.get('row_id')
 
         if not user_input and not row_id_to_fetch:
             return jsonify({"error": "User input or row_id is required"}), 400
@@ -44,7 +44,6 @@ def analyze_route():
         if row_id_to_fetch:
             print(f"DEBUG: Fetching Row ID: {row_id_to_fetch}", file=sys.stderr)
             
-            # Use positional arguments for get_table_row
             row_response = jamai.table.get_table_row(
                 p.TableType.ACTION,
                 TABLE_ID,
@@ -57,7 +56,6 @@ def analyze_route():
                 
                 if 'route_analysis' in final_row:
                     
-                    # Check for completion by looking for non-empty content in the inner ["value"] key
                     analysis_val = final_row.get("route_analysis", {}).get("value")
                     pps_val = final_row.get("selected_pps", {}).get("value")
 
@@ -88,7 +86,7 @@ def analyze_route():
             }), 200
 
         # =========================================================
-        # MODE 1: SUBMIT JOB (The initial request)
+        # MODE 1: SUBMIT JOB
         # =========================================================
         else:
             print("DEBUG: Submitting new job...", file=sys.stderr)
@@ -124,7 +122,6 @@ def analyze_route():
 
             print(f"DEBUG: Job Submitted. Row ID: {row_id}", file=sys.stderr)
 
-            # Return job ID immediately (fast response)
             return jsonify({
                 "success": True, 
                 "status": "submitted", 
@@ -134,3 +131,9 @@ def analyze_route():
     except Exception as e:
         print(f"FATAL ERROR in analyze_route: {e}", file=sys.stderr)
         return jsonify({"error": str(e)}), 500
+
+# 💡 FIX 3: Catch-all GET route for all other paths (e.g., favicon.ico)
+@app.route('/api/<path:subpath>', methods=['GET'])
+def api_catch_all_get(subpath):
+    # This prevents unhandled 404 errors in Vercel's console for accidental GET requests
+    return jsonify({"error": f"Path Not Found (404): The requested URL /api/{subpath} is not supported. Please use POST to /api/analyze."}), 404
