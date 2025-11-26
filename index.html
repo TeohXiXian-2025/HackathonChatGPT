@@ -267,22 +267,13 @@
             routingCoords.textContent = `${coordsDisplay} (Source: ${userLocation.source || 'None'})`;
         }
 
-        async function getGPSLocation() {
-            return new Promise((resolve, reject) => {
-                if (!navigator.geolocation) return reject("Geolocation not supported.");
-                const options = { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }; 
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        userLocation.lat = position.coords.latitude;
-                        userLocation.lon = position.coords.longitude;
-                        userLocation.city = 'Current Location'; 
-                        userLocation.region = 'GPS Area';
-                        userLocation.source = 'GPS';
-                        resolve(true);
-                    },
-                    (error) => { reject(error); }, options
-                );
-            });
+        // Helper function to save GPS result to userLocation object
+        function savePosition(position) {
+            userLocation.lat = position.coords.latitude;
+            userLocation.lon = position.coords.longitude;
+            userLocation.city = 'Current Location'; 
+            userLocation.region = 'GPS/WiFi Area';
+            userLocation.source = 'GPS';
         }
         
         async function getIPLocation() {
@@ -301,25 +292,47 @@
             return false;
         }
 
+        // Helper to wrap the callback API in a Promise
+        const getPos = (opts) => new Promise((res, rej) => {
+            // Geolocation is required for this promise to resolve/reject
+            if (!navigator.geolocation) return rej(new Error("Geolocation not supported."));
+            navigator.geolocation.getCurrentPosition(res, rej, opts);
+        });
+        
+        // The main, robust location detection function using Promise.race
         async function getUserLocation() {
             const display = document.getElementById('current-location-display');
             display.classList.add('pulse-animation');
             display.innerHTML = 'Detecting location...';
 
+            // 1. Define the GPS attempts (High and Low accuracy) to run in parallel
+            const highAccuracyPromise = getPos({ enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }); // Aggressive timeout
+            const lowAccuracyPromise = getPos({ enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }); // Slower fallback
+
             try {
-                await getGPSLocation();
+                // 2. Race the two GPS attempts (the first success wins)
+                const position = await Promise.race([highAccuracyPromise, lowAccuracyPromise]);
+                
+                // Save the successful position and update the UI
+                savePosition(position);
                 updateLocationUI();
                 return; 
-            } catch (e) {}
+            } catch (e) {
+                console.log("GPS/Geolocation failed or timed out. Moving to IP detection...", e);
+            }
 
+            // 3. Fallback to IP Location
             try {
                 const ipSuccess = await getIPLocation();
                 if (ipSuccess) {
                     updateLocationUI();
-                    return; 
+                    return;
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn("IP Location attempt failed.", e);
+            }
 
+            // 4. Final fallback (Source: null, triggers Manual Input form display)
             userLocation.source = null;
             updateLocationUI();
         }
@@ -537,7 +550,6 @@
             }
         }
 
-        // --- NEW DOWNLOAD FUNCTIONALITY ---
         function downloadQR() {
             const canvas = document.getElementById('qr-canvas');
             if (!window.familyData || !window.familyData.jkmPayload) {
