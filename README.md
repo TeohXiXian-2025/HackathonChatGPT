@@ -27,13 +27,13 @@ This project is a Flood Safety Assistant designed to support vulnerable communit
 
 **Structured Output:** Every response includes:
 
-**~**Recommendation
+**Recommendation
 
-**~**Accessibility & Pets
+**Accessibility & Pets
 
-**~**Rationale (why other PPS options were rejected)
+**Rationale (why other PPS options were rejected)
 
-**~**Rumours detector
+**Rumours detector
 
 **All structured responses are managed in Jama Connect under tables like english_prompt and malay_prompt.**
 
