@@ -279,6 +279,8 @@
         async function getIPLocation() {
             try {
                 const response = await fetch(`https://api.ip2location.io/?key=${IP2LOCATION_KEY}&format=json`);
+                if (!response.ok) throw new Error('IP API returned non-OK status');
+
                 const data = await response.json();
                 if (data && data.city_name) {
                     userLocation.lat = parseFloat(data.latitude);
@@ -288,7 +290,9 @@
                     userLocation.source = 'IP';
                     return true;
                 }
-            } catch (e) { console.warn("IP2Location API call failed.", e); }
+            } catch (e) { 
+                console.warn("IP2Location API call failed or returned invalid data.", e);
+            }
             return false;
         }
 
@@ -318,7 +322,7 @@
                 updateLocationUI();
                 return; 
             } catch (e) {
-                console.log("GPS/Geolocation failed or timed out. Moving to IP detection...", e);
+                console.log("GPS/Geolocation failed or timed out. Moving to IP detection.", e);
             }
 
             // 3. Fallback to IP Location
@@ -329,7 +333,8 @@
                     return;
                 }
             } catch (e) {
-                console.warn("IP Location attempt failed.", e);
+                // Catch is here for completeness, but getIPLocation should handle most errors and return false
+                console.warn("Unexpected IP Location Error.", e);
             }
 
             // 4. Final fallback (Source: null, triggers Manual Input form display)
