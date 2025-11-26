@@ -36,11 +36,11 @@ Due to time limit and avoiding copyright issues for scraping government data, we
 ## JAMAIBASE
 **Rumours detector
 
-**All structured responses are managed in Jama Connect under tables like english_prompt and malay_prompt.**
+**All structured responses are managed in JAMAI under tables like english_prompt and malay_prompt.**
 
 Table Columns:
 Column	Description
-Name	Scenario or query type (e.g. “public transport”, “OKU access”)
+Name	Scenario or query type (e.g. “pu blic transport”, “OKU access”)
 Recommendation	Safest PPS or action to take
 Accessibility & Pet	Accessibility features and pet policy (e.g. “Mesra kerusi roda, haiwan dibenarkan”)
 Rationale	3-point explanation of rejected PPS options
