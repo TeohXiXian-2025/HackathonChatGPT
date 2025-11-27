@@ -74,7 +74,7 @@
     "shelter_name": "Dewan Serbaguna Taman Kenangan",
     "location": "Kuala Terengganu, Terengganu",
     "latitude": 5.3302,
-    "longitude": 103.1408,
+    "longitude": 103.1418,
     "benefits": ["Indoor hall", "Used in past as PPS"],
     "drawbacks": ["Limited capacity"],
     "friendly_tags": ["family_friendly"]
@@ -104,7 +104,7 @@
     "shelter_name": "Dewan Serbaguna Kampung Baru (PPS)",
     "location": "Kuala Lumpur (Lembah Klang vicinity)",
     "latitude": 3.1630,
-    "longitude": 101.7061,
+    "longitude": 101.7060,
     "benefits": ["Central urban hall", "Accessible by major roads"],
     "drawbacks": ["Can be congested"],
     "friendly_tags": ["family_friendly"]
@@ -188,7 +188,17 @@
     "benefits": ["Community hall", "Accessible by public transit"],
     "drawbacks": ["May be crowded"],
     "friendly_tags": ["family_friendly", "OKU_friendly"]
-  }
+  },
+  {
+    "id": 20,
+    "shelter_name": "Dewan Orang Ramai Kota Bharu",
+    "location": "Kota Bharu, Kelantan",
+    "latitude": 6.1399,
+    "longitude": 102.2422,
+    "benefits": ["Large municipal hall","Nearby services"],
+    "drawbacks": ["Can be used for official events"],
+    "friendly_tags": ["family_friendly","kid_friendly"]
+  },
   {
     "id": 21,
     "shelter_name": "Dewan Serbaguna Tanah Merah",
