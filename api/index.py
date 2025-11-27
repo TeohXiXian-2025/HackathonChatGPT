@@ -23,6 +23,9 @@ def analyze_route():
         data = request.json or {}
         user_input = data.get('user_input')
         location_details = data.get('location_details')
+        # --- NEW: Capture the math/distance data from frontend ---
+        context_data = data.get('context_data') 
+        # ---------------------------------------------------------
         row_id_to_fetch = data.get('row_id')
 
         if not user_input and not row_id_to_fetch:
@@ -122,9 +125,22 @@ def analyze_route():
         # =========================================================
         else:
             print("DEBUG: Submitting new job...", file=sys.stderr)
+
+            # --- KEY CHANGE: Merge Math Data into User Input ---
+            # If context_data exists, we append it to the user_input string.
+            # This allows the AI to see the distances without needing a new table column.
+            final_user_input = user_input
+            if context_data:
+                final_user_input = (
+                    f"{user_input}\n\n"
+                    f"--- SYSTEM DATA (VERIFIED DISTANCES) ---\n"
+                    f"{context_data}\n"
+                    f"----------------------------------------"
+                )
+
             row_data = {
                 "action": "find_safe_shelter",
-                "user_input": user_input,
+                "user_input": final_user_input, # Sending the combined data
                 "location_details": location_details,
                 "created_at": datetime.now().isoformat()
             }
