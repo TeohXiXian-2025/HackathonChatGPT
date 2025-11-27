@@ -65,7 +65,7 @@
 
     <div id="guest-info" class="p-3 bg-yellow-50 border-b border-yellow-400">
         <div class="max-w-4xl mx-auto text-sm text-yellow-800 font-medium text-center md:text-left">
-            ⚠️ Guest Mode: All data is saved locally in your browser.
+            ⚠️ Logic Update: Distance is now calculated mathematically before AI analysis.
         </div>
     </div>
     
@@ -92,11 +92,11 @@
                 <div id="location-status-container">
                     <p id="current-location-display" class="text-base text-gray-700 font-semibold pulse-animation mb-4">Initializing...</p>
                     
-                    <form id="manual-location-form" class="mt-4 border-t pt-4 hidden space-y-3">
+                    <div id="manual-location-form" class="mt-4 border-t pt-4 hidden space-y-3">
                         <p id="manual-form-message" class="text-sm font-bold text-gray-700">Is this wrong? Enter your location manually:</p>
-                        <input type="text" id="manual-city-input" placeholder="Enter City/Suburb (e.g., Segamat, Johor)" class="w-full rounded-lg border-gray-300 shadow-sm p-3 border">
-                        <button type="submit" class="w-full py-3 px-4 rounded-lg text-white font-bold bg-gray-600 hover:bg-gray-700 transition">Update Location Manually</button>
-                    </form>
+                        <input type="text" id="manual-city-input" placeholder="Enter City/Suburb (e.g., Pasir Gudang)" class="w-full rounded-lg border-gray-300 shadow-sm p-3 border">
+                        <button type="button" onclick="handleManualLocationUpdate()" class="w-full py-3 px-4 rounded-lg text-white font-bold bg-gray-600 hover:bg-gray-700 transition">Update Location Manually</button>
+                    </div>
                 </div>
             </div>
 
@@ -133,6 +133,7 @@
                 <p class="text-xs text-gray-500">Calculation based on: 
                     <span id="routing-coords" class="font-mono text-gray-700">N/A</span>
                 </p>
+                <div id="distance-debug-log" class="mt-2 text-xs text-gray-500 font-mono bg-gray-100 p-2 rounded hidden"></div>
             </div>
 
             <div id="routing-results" class="space-y-4">
@@ -183,38 +184,12 @@
                     <canvas id="qr-canvas" class="w-64 h-64 md:w-80 md:h-80"></canvas>
                 </div>
                 <p id="qr-status" class="text-center text-red-500 font-bold">No family data saved yet.</p>
-                
                 <div class="flex flex-col gap-2 w-full max-w-sm">
                     <button id="download-qr-button" class="w-full py-3 px-4 rounded-lg text-sm font-bold bg-green-600 text-white hover:bg-green-700 transition shadow-lg hidden" onclick="downloadQR()">
                         📥 Download QR to Gallery
                     </button>
-                    
-                    <button id="copy-payload-button" class="w-full py-3 px-4 border rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 transition hidden" onclick="copyJKMPayload()">
-                        📋 Copy JKM Payload (Raw Text)
-                    </button>
                 </div>
             </div>
-            
-            <div class="mt-6 text-sm p-4 bg-gray-100 rounded-lg border border-gray-300">
-                <p class="font-semibold text-gray-700">JKM Schema Preview (Raw Payload):</p>
-                <code id="jkm-payload-preview" class="block whitespace-pre-wrap break-words text-gray-600 mt-2 text-xs font-mono">Awaiting data...</code>
-            </div>
-        </section>
-        
-        <section id="rumour-killer" class="tab-content hidden space-y-4">
-            <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">4. Rumour Killer (Grounded Q&A)</h2>
-            <div id="chat-window" class="chat-window card p-4 h-96 overflow-y-auto flex flex-col space-y-3">
-                <div class="ai-message">
-                    <p class="text-sm font-medium">Welcome! Ask me anything about current disaster status or safety procedures.</p>
-                </div>
-            </div>
-
-            <form id="rumour-form" class="flex space-x-2">
-                <input type="text" id="rumour-input" required placeholder="Type your question here..." class="flex-1 rounded-lg border-gray-300 shadow-sm p-3 border focus:ring-indigo-500 focus:border-indigo-500">
-                <button type="submit" id="rumour-submit-button" class="shrink-0 py-3 px-4 rounded-lg text-white font-bold bg-indigo-600 hover:bg-indigo-700 transition shadow-md">
-                    Ask ✨
-                </button>
-            </form>
         </section>
     </main>
 
@@ -232,7 +207,55 @@
         window.userId = localStorage.getItem(GUEST_ID_KEY);
         document.getElementById('uid-span').textContent = window.userId.substring(0, 8);
 
-        // --- LOCATION LOGIC ---
+        // --- MATH & DISTANCE UTILS (The Fix for Hallucinations) ---
+
+        // 1. Haversine Formula: Calculates accurate distance between two coords
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth radius in km
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return parseFloat((R * c).toFixed(2)); // Return distance in KM, 2 decimals
+        }
+
+        function deg2rad(deg) { return deg * (Math.PI / 180); }
+
+        // 2. Geocoding: Converts "Pasir Gudang" -> {lat: 1.46, lon: 103.90}
+        async function getCoordsFromInput(cityInput) {
+            // Case A: No manual input, use existing GPS/IP if available
+            if (!cityInput && userLocation.lat && userLocation.lon) {
+                return { lat: userLocation.lat, lon: userLocation.lon, name: "Detected Location" };
+            }
+            
+            // Case B: User typed a city. We must fetch coords.
+            const query = cityInput || userLocation.city;
+            if (!query) return null;
+
+            console.log(`Geocoding search for: ${query}`);
+            try {
+                // Using OpenStreetMap Nominatim (Free, rate-limited)
+                const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=my&q=${encodeURIComponent(query)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (data && data.length > 0) {
+                    return { 
+                        lat: parseFloat(data[0].lat), 
+                        lon: parseFloat(data[0].lon),
+                        name: data[0].display_name 
+                    };
+                }
+            } catch (e) {
+                console.error("Geocoding failed", e);
+            }
+            return null;
+        }
+
+        // --- LOCATION UI LOGIC ---
         function updateLocationUI() {
             const display = document.getElementById('current-location-display');
             const manualForm = document.getElementById('manual-location-form');
@@ -250,13 +273,14 @@
                 display.innerHTML = `✅ <b>GPS Confirmed:</b> ${userLocation.city || 'Current Location'} <span class="text-xs text-gray-500">(${coordsDisplay})</span>`;
                 manualForm.classList.add('hidden');
             } else if (userLocation.source === 'IP') {
-                display.innerHTML = `⚠️ <b>Network Detected:</b> We think you are in <b class="text-indigo-700">${userLocation.city}, ${userLocation.region}</b>.`;
+                display.innerHTML = `⚠️ <b>Network Detected:</b> We think you are in <b class="text-indigo-700">${userLocation.city || 'Malaysia'}</b>.`;
                 manualForm.classList.remove('hidden');
                 manualMessage.className = "text-sm font-semibold text-gray-700";
                 manualMessage.innerHTML = `📍 <b>Is this wrong?</b> Enter your actual City/Suburb below:`;
             } else if (userLocation.source === 'Manual') {
-                display.innerHTML = `📍 <b>Manual Location:</b> ${userLocation.city}, ${userLocation.region}`;
-                manualForm.classList.add('hidden'); 
+                display.innerHTML = `📍 <b>Manual Location:</b> ${userLocation.city}`;
+                manualForm.classList.remove('hidden'); // Keep it visible to allow changes
+                manualMessage.innerHTML = "Location set manually.";
             } else {
                 display.innerHTML = `❌ <b>Location Unknown.</b>`;
                 display.classList.add('pulse-animation');
@@ -267,131 +291,155 @@
             routingCoords.textContent = `${coordsDisplay} (Source: ${userLocation.source || 'None'})`;
         }
 
-        // Helper function to save GPS result to userLocation object
+        function handleManualLocationUpdate() {
+            const cityInput = document.getElementById('manual-city-input').value.trim();
+            if (cityInput) {
+                userLocation.city = cityInput;
+                userLocation.source = 'Manual';
+                // Reset coords so geocoding triggers during submission
+                userLocation.lat = null; 
+                userLocation.lon = null; 
+                updateLocationUI();
+                alert(`Location set to ${cityInput}. Coordinates will be calculated upon submission.`);
+            }
+        }
+
+        // --- LOCATION DETECTION (GPS -> IP) ---
         function savePosition(position) {
             userLocation.lat = position.coords.latitude;
             userLocation.lon = position.coords.longitude;
             userLocation.city = 'Current Location'; 
-            userLocation.region = 'GPS/WiFi Area';
             userLocation.source = 'GPS';
         }
         
         async function getIPLocation() {
             try {
                 const response = await fetch(`https://api.ip2location.io/?key=${IP2LOCATION_KEY}&format=json`);
-                if (!response.ok) throw new Error('IP API returned non-OK status');
-
+                if (!response.ok) throw new Error('IP API Error');
                 const data = await response.json();
                 if (data && data.city_name) {
                     userLocation.lat = parseFloat(data.latitude);
                     userLocation.lon = parseFloat(data.longitude);
                     userLocation.city = data.city_name; 
-                    userLocation.region = data.region_name; 
                     userLocation.source = 'IP';
                     return true;
                 }
-            } catch (e) { 
-                console.warn("IP2Location API call failed or returned invalid data.", e);
-            }
+            } catch (e) { console.warn("IP Location failed.", e); }
             return false;
         }
 
-        // Helper to wrap the callback API in a Promise
         const getPos = (opts) => new Promise((res, rej) => {
-            // Geolocation is required for this promise to resolve/reject
             if (!navigator.geolocation) return rej(new Error("Geolocation not supported."));
             navigator.geolocation.getCurrentPosition(res, rej, opts);
         });
         
-        // The main, sequential location detection function (MODIFIED)
         async function getUserLocation() {
             const display = document.getElementById('current-location-display');
             display.classList.add('pulse-animation');
             display.innerHTML = 'Detecting location...';
 
-            // 1. Attempt GPS/Geolocation (Primary, High Accuracy)
             try {
-                const position = await getPos({ 
-                    enableHighAccuracy: true, 
-                    timeout: 10000, // Increased timeout since we are not racing
-                    maximumAge: 0 
-                });
-                
-                // Success: Save GPS position
+                const position = await getPos({ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
                 savePosition(position);
                 updateLocationUI();
                 return; 
+            } catch (e) { console.log("GPS failed. Trying IP."); }
 
-            } catch (e) {
-                console.log("GPS/Geolocation failed or timed out. Moving to IP detection.", e);
-            }
+            if (await getIPLocation()) { updateLocationUI(); return; }
 
-            // 2. Fallback to IP Location
-            try {
-                const ipSuccess = await getIPLocation();
-                if (ipSuccess) {
-                    // Success: IP location found. Display and allow manual override.
-                    updateLocationUI();
-                    return;
-                }
-            } catch (e) {
-                console.warn("Unexpected IP Location Error.", e);
-            }
-
-            // 3. Final fallback: Failed to detect.
             userLocation.source = null;
-            updateLocationUI(); // This will trigger the display of the Manual Input form
+            updateLocationUI();
         }
 
-        document.getElementById('manual-location-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            const cityInput = document.getElementById('manual-city-input').value.trim();
-            if (cityInput) {
-                userLocation.city = cityInput;
-                userLocation.region = 'Manual Input';
-                userLocation.source = 'Manual';
-                if (!userLocation.lat) { userLocation.lat = null; userLocation.lon = null; }
-                updateLocationUI();
-            }
-        });
-
-        // --- SUBMISSION LOGIC ---
+        // --- SUBMISSION LOGIC (THE HYBRID MATH + AI PART) ---
         document.getElementById("semantic-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const inputText = document.getElementById("semantic-input").value;
             const button = document.getElementById('semantic-submit-button');
             const routingStatus = document.getElementById('save-routing-status');
+            const debugLog = document.getElementById('distance-debug-log');
             
-            button.disabled = true; button.classList.add('opacity-50'); button.textContent = '✨ Submitting Job...';
-            document.getElementById("analysis-display").classList.remove("hidden");
-            document.getElementById("best-match-display").classList.remove("hidden");
+            button.disabled = true; 
+            button.classList.add('opacity-50'); 
+            button.textContent = '📐 Calculating Distances...';
             
-            const statusCard = document.getElementById('local-status-results-routing');
-            statusCard.classList.remove('bg-green-100', 'border-green-500', 'bg-red-100', 'border-red-500', 'bg-yellow-100', 'border-yellow-500');
-            statusCard.classList.add('bg-blue-100', 'border-blue-500');
-            document.getElementById('status-content').innerHTML = '<p class="text-sm text-gray-500 pulse-animation">Job is processing...</p>';
+            // 1. Resolve Location (Geocode Manual Input if necessary)
+            const manualInput = document.getElementById('manual-city-input').value;
+            let userCoords = await getCoordsFromInput(manualInput);
 
-            let locationString = "";
-            if (userLocation.lat && userLocation.lon) {
-                locationString = `Lat: ${userLocation.lat.toFixed(4)}, Long: ${userLocation.lon.toFixed(4)}`;
-                if (userLocation.city) locationString += ` (${userLocation.city}, ${userLocation.region})`;
-            } else {
-                locationString = userLocation.city ? userLocation.city : "Unknown Location";
+            if (!userCoords || isNaN(userCoords.lat)) {
+                alert("Could not find coordinates for your location. Please check the spelling of your city.");
+                button.disabled = false; button.classList.remove('opacity-50'); button.textContent = '✨ Get Safe Route';
+                return;
             }
 
-            const payload = { user_input: inputText, location_details: locationString };
+            // Update UI with resolved coords
+            document.getElementById('routing-coords').textContent = `${userCoords.lat.toFixed(4)}, ${userCoords.lon.toFixed(4)}`;
+
+            // 2. Load & Filter Shelter Data
+            let nearbyShelters = [];
+            try {
+                // Fetch the JSON file (Must be hosted locally or on server)
+                const res = await fetch('flood_shelters_H.json');
+                const shelters = await res.json();
+                
+                // MATH: Calculate distance for every shelter
+                const sheltersWithDist = shelters.map(s => {
+                    return {
+                        ...s,
+                        real_dist: calculateDistance(userCoords.lat, userCoords.lon, s.latitude, s.longitude)
+                    };
+                });
+
+                // Sort: Closest first
+                sheltersWithDist.sort((a, b) => a.real_dist - b.real_dist);
+                
+                // Filter: Top 3
+                nearbyShelters = sheltersWithDist.slice(0, 3);
+
+                // Debug Display
+                debugLog.classList.remove('hidden');
+                debugLog.innerHTML = `<b>Math Verified Closest:</b><br>` + 
+                    nearbyShelters.map(s => `${s.shelter_name}: ${s.real_dist} km`).join('<br>');
+
+            } catch (err) {
+                console.error("Failed to load/process shelter JSON", err);
+                alert("Error loading shelter database. Ensure 'flood_shelters_H.json' is in the same folder.");
+                button.disabled = false; button.textContent = 'Try Again';
+                return;
+            }
+
+            // 3. Prepare AI Prompt (Injecting Math Facts)
+            // We give the AI the specific distances so it cannot hallucinate.
+            const ppsContext = nearbyShelters.map(s => 
+                `- ${s.shelter_name} (ID: ${s.id}): EXACT DISTANCE ${s.real_dist} KM away. Facilities: ${s.benefits.join(', ')}. Tags: ${s.friendly_tags.join(', ')}.`
+            ).join("\n");
+
+            const finalContextData = `User Location: ${userCoords.name} (${userCoords.lat}, ${userCoords.lon}).\n\nVerified Closest Shelters (Math-Calculated):\n${ppsContext}\n\nUser Needs: ${inputText}`;
+
+            // 4. Send to API
+            button.textContent = '✨ AI Analyzing Needs...';
+            document.getElementById("analysis-display").classList.remove("hidden");
+            document.getElementById("best-match-display").classList.remove("hidden");
+            showTab("routing");
+
+            const payload = { 
+                user_input: inputText, 
+                location_details: userCoords.name,
+                // THIS IS THE KEY: We send the filtered list + calculated distances as context
+                context_data: finalContextData 
+            };
 
             try {
-                const res = await fetch("/api/analyze", {
+                const apiRes = await fetch("/api/analyze", {
                     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
                 });
                 
-                const data = await res.json();
-                if (res.ok && data.status === 'submitted') {
-                    routingStatus.textContent = `Job submitted. Polling... (ID: ${data.row_id})`;
-                    button.textContent = '✨ Analysis Running...';
-                    showTab("routing");
-                    pollForResults(data.row_id, button, routingStatus, statusCard);
+                const data = await apiRes.json();
+                
+                if (apiRes.ok && data.status === 'submitted') {
+                    routingStatus.textContent = `Job submitted. Polling ID: ${data.row_id}`;
+                    pollForResults(data.row_id, button, routingStatus);
                 } else {
                      routingStatus.textContent = "❌ Submission failed.";
                      button.disabled = false; button.classList.remove('opacity-50');
@@ -399,24 +447,14 @@
             } catch (error) {
                 console.error(error);
                 routingStatus.textContent = "❌ Network error.";
-                button.disabled = false; button.classList.remove('opacity-50');
+                button.disabled = false;
             }
         });
 
-        async function pollForResults(rowId, button, routingStatus, statusCard) {
-            const POLLING_INTERVAL_MS = 3000;
-            const MAX_POLLS = 20; 
-            let attempts = 0;
-
+        // --- POLLING LOGIC ---
+        async function pollForResults(rowId, button, routingStatus) {
+            const statusCard = document.getElementById('local-status-results-routing');
             const interval = setInterval(async () => {
-                attempts++;
-                if (attempts > MAX_POLLS) {
-                    clearInterval(interval);
-                    routingStatus.textContent = "❌ Analysis timed out.";
-                    button.disabled = false; button.classList.remove('opacity-50');
-                    return;
-                }
-
                 try {
                     const res = await fetch("/api/analyze", {
                         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ row_id: rowId })
@@ -425,188 +463,111 @@
 
                     if (data.status === 'complete' && data.success) {
                         clearInterval(interval);
+                        
+                        // Parse tags
                         const tagsString = typeof data.tags === 'string' ? data.tags : '';
                         const decodedTags = tagsString.split(',').map(t => t.trim()).filter(Boolean);
-                        window.saveFamilyData({ vulnerabilities: decodedTags.length > 0 ? decodedTags : ['N/A Pax'] });
                         
-                        document.getElementById("current-vulnerabilities").innerHTML = `<span class="font-bold text-indigo-700">${(decodedTags.length > 0 ? decodedTags : ['N/A Pax']).join('; ')}</span>`;
-                        document.getElementById("analysis-display").textContent = data.analysis || "No detailed analysis provided.";
+                        // Update UI
+                        document.getElementById("current-vulnerabilities").innerHTML = `<span class="font-bold text-indigo-700">${(decodedTags.length > 0 ? decodedTags : ['N/A']).join('; ')}</span>`;
+                        document.getElementById("analysis-display").textContent = data.analysis;
                         document.getElementById("best-match-display").innerHTML = `
                             <p class="text-2xl font-extrabold text-green-700">Best Match Found!</p>
-                            <p class="text-4xl font-extrabold text-indigo-700 my-2">${data.selected_pps || 'Unknown PPS'}</p>
+                            <p class="text-4xl font-extrabold text-indigo-700 my-2">${data.selected_pps || 'See Analysis'}</p>
                             <p class="text-lg text-gray-700">Proceed to the QR Passport tab.</p>
                         `;
                         document.getElementById("jamai-citation").classList.remove("hidden");
-                        document.getElementById('status-content').innerHTML = `<p class="text-sm whitespace-pre-wrap text-gray-800">✅ Routing successful.</p>`;
                         
-                        statusCard.classList.remove('bg-blue-100', 'border-blue-500');
-                        statusCard.classList.add('bg-green-100', 'border-green-500');
-                        routingStatus.textContent = "✅ Analysis complete.";
-                        button.disabled = false; button.classList.remove('opacity-50');
+                        statusCard.className = "card p-5 border-l-4 transition duration-300 bg-green-100 border-green-500";
+                        document.getElementById('status-content').innerHTML = `<p class="text-sm font-bold text-green-800">✅ Routing successful.</p>`;
+                        
+                        // Save for passport
+                        window.saveFamilyData({ vulnerabilities: decodedTags });
+                        
+                        button.disabled = false; 
+                        button.classList.remove('opacity-50');
+                        button.textContent = '✨ Analysis Complete';
                         
                     } else if (data.status === 'pending') {
-                        routingStatus.textContent = `Processing... (${attempts * 3}s)`;
+                        routingStatus.textContent = `Processing...`;
                     } else {
                         clearInterval(interval);
                         routingStatus.textContent = `❌ Error: ${data.error}`;
+                        button.disabled = false;
                     }
-                } catch (error) {
-                    clearInterval(interval);
-                    console.error("Polling Error:", error);
-                }
-            }, POLLING_INTERVAL_MS);
+                } catch (error) { clearInterval(interval); }
+            }, 3000);
         }
 
-        // --- STORAGE & UTIL ---
+        // --- PASSPORT & STORAGE UTILS ---
         window.saveFamilyData = async (data) => {
-            try {
-                const key = `smartpps_profile_${window.userId}`;
-                const existing = JSON.parse(localStorage.getItem(key) || '{}');
-                const merged = Object.assign({}, existing, data);
-                merged.updated_at = new Date().toISOString();
-                localStorage.setItem(key, JSON.stringify(merged));
-                window.familyData = merged;
-                if (window.updateUIAfterDataLoad) window.updateUIAfterDataLoad(merged);
-                return true;
-            } catch (e) { console.error('saveFamilyData error', e); return false; }
+            const key = `smartpps_profile_${window.userId}`;
+            const existing = JSON.parse(localStorage.getItem(key) || '{}');
+            const merged = Object.assign({}, existing, data);
+            localStorage.setItem(key, JSON.stringify(merged));
+            window.familyData = merged;
+            updateUIAfterDataLoad(merged);
+            return true;
         };
 
         window.loadFamilyData = async () => {
-            try {
-                const key = `smartpps_profile_${window.userId}`;
-                const stored = localStorage.getItem(key);
-                if (stored) {
-                    window.familyData = JSON.parse(stored);
-                    if (window.updateUIAfterDataLoad) window.updateUIAfterDataLoad(window.familyData);
-                    return window.familyData;
-                }
-                window.familyData = {};
-                return window.familyData;
-            } catch (e) { window.familyData = {}; return window.familyData; }
+            const key = `smartpps_profile_${window.userId}`;
+            const stored = localStorage.getItem(key);
+            window.familyData = stored ? JSON.parse(stored) : {};
+            updateUIAfterDataLoad(window.familyData);
         };
 
-        window.updateUIAfterDataLoad = (data) => {
-            window.familyData = data;
+        function updateUIAfterDataLoad(data) {
             const form = document.getElementById('family-form');
-            const vulnerabilitiesDisplay = document.getElementById('vulnerability-list-display');
-            
             if (Object.keys(data).length > 0) {
-                ['headName', 'icNumber', 'address', 'familySize'].forEach(key => {
-                    const input = form.querySelector(`#${key}`);
-                    if (input && data[key] !== undefined) input.value = data[key];
+                ['headName', 'icNumber', 'address', 'familySize'].forEach(k => {
+                    if (form[k] && data[k]) form[k].value = data[k];
                 });
-                vulnerabilitiesDisplay.textContent = data.vulnerabilities?.join('; ') || 'None saved.';
-            } else {
-                form.reset();
-                vulnerabilitiesDisplay.textContent = 'None saved.';
+                document.getElementById('vulnerability-list-display').textContent = data.vulnerabilities?.join('; ') || 'None saved.';
             }
             updateQRCode(data);
-            toggleDownloadButtons(data);
-        };
+            const dlBtn = document.getElementById('download-qr-button');
+            if(data.jkmPayload) dlBtn.classList.remove('hidden');
+        }
 
         function generateJKMQRPayload(data) {
-            const payload = {
-                schema: "JKM_PPS_v1.0", timestamp: new Date().toISOString(), ref_id: window.userId.substring(0,12), 
-                nama_ketua: data.headName || 'N/A', no_ic: data.icNumber || 'N/A', alamat: data.address || 'N/A', 
-                jumlah_ahli: data.familySize || 0, keperluan_khas: data.vulnerabilities || []
-            };
-            return JSON.stringify(payload, null, 0);
+            return JSON.stringify({
+                schema: "JKM_PPS_v1.0", 
+                ref_id: window.userId.substring(0,8),
+                nama: data.headName, 
+                ic: data.icNumber, 
+                needs: data.vulnerabilities 
+            });
         }
 
         function updateQRCode(data = window.familyData) {
-            const statusEl = document.getElementById('qr-status');
-            const previewEl = document.getElementById('jkm-payload-preview');
             const canvas = document.getElementById('qr-canvas');
-
             if (data && data.jkmPayload) {
-                statusEl.textContent = "QR Code Generated. Ready to scan.";
-                statusEl.classList.remove('text-red-500'); statusEl.classList.add('text-green-600');
-                previewEl.textContent = JSON.stringify(JSON.parse(data.jkmPayload), null, 2); 
-
-                QRCode.toCanvas(canvas, data.jkmPayload, {
-                    errorCorrectionLevel: 'H', width: 300, margin: 1, color: { dark: '#1f2937', light: '#ffffff' }
-                }, function (error) { if (error) console.error(error); });
-            } else {
-                statusEl.textContent = "No family data saved yet. Please complete the form above.";
-                statusEl.classList.add('text-red-500'); statusEl.classList.remove('text-green-600');
-                previewEl.textContent = 'Awaiting data...';
-                const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height);
+                QRCode.toCanvas(canvas, data.jkmPayload, { width: 300 }, (e) => { if(e) console.error(e); });
+                document.getElementById('qr-status').textContent = "Ready to Scan";
+                document.getElementById('qr-status').className = "text-center text-green-600 font-bold";
             }
         }
-
-        function copyJKMPayload() {
-            if (window.familyData && window.familyData.jkmPayload) {
-                navigator.clipboard.writeText(window.familyData.jkmPayload).then(() => {
-                    alert('JKM Payload copied to clipboard!');
-                }).catch(err => { console.error('Could not copy text: ', err); });
-            }
-        }
-
-        function toggleDownloadButtons(data) {
-            const downloadBtn = document.getElementById('download-qr-button');
-            const copyBtn = document.getElementById('copy-payload-button');
-            const isReady = data && data.jkmPayload && data.headName;
-            
-            if (isReady) {
-                downloadBtn.classList.remove('hidden');
-                copyBtn.classList.remove('hidden');
-            } else {
-                downloadBtn.classList.add('hidden');
-                copyBtn.classList.add('hidden');
-            }
-        }
-
+        
         function downloadQR() {
-            const canvas = document.getElementById('qr-canvas');
-            if (!window.familyData || !window.familyData.jkmPayload) {
-                alert("Please generate the passport first.");
-                return;
-            }
-            
-            // Generate a safe filename
-            const safeName = (window.familyData.headName || 'Family').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const filename = `SafeRoute_ID_${safeName}.png`;
-
-            // Create download link
             const link = document.createElement('a');
-            link.download = filename;
-            link.href = canvas.toDataURL("image/png");
-            document.body.appendChild(link);
+            link.download = 'SafeRoute_ID.png';
+            link.href = document.getElementById('qr-canvas').toDataURL();
             link.click();
-            document.body.removeChild(link);
         }
 
         document.getElementById('family-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
-            const vulnerabilities = window.familyData.vulnerabilities || []; 
-            const formData = {
-                headName: form.headName.value, icNumber: form.icNumber.value, address: form.address.value,
-                familySize: parseInt(form.familySize.value), vulnerabilities: vulnerabilities,
+            const data = {
+                headName: form.headName.value, icNumber: form.icNumber.value, 
+                address: form.address.value, familySize: form.familySize.value,
+                vulnerabilities: window.familyData.vulnerabilities || []
             };
-            formData.jkmPayload = generateJKMQRPayload(formData);
-            const success = await window.saveFamilyData(formData);
-            const statusEl = document.getElementById('save-status');
-            
-            if (success) {
-                statusEl.textContent = "Data saved successfully!";
-                statusEl.classList.remove('hidden', 'bg-red-100', 'text-red-700'); statusEl.classList.add('bg-green-100', 'text-green-700');
-            } else {
-                statusEl.textContent = "Error saving data.";
-                statusEl.classList.remove('hidden', 'bg-green-100', 'text-green-700'); statusEl.classList.add('bg-red-100', 'text-red-700');
-            }
-            setTimeout(() => statusEl.classList.add('hidden'), 5000);
-        });
-
-        document.getElementById('rumour-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const inputEl = document.getElementById('rumour-input');
-            const query = inputEl.value.trim();
-            inputEl.value = '';
-            const chatWindow = document.getElementById('chat-window');
-            chatWindow.innerHTML += `<div class="user-message">${query}</div>`;
-            chatWindow.innerHTML += `<div class="ai-message bg-red-50 text-red-700">⚠️ Feature Disabled (Demo).</div>`;
-            chatWindow.scrollTop = chatWindow.scrollHeight;
+            data.jkmPayload = generateJKMQRPayload(data);
+            await window.saveFamilyData(data);
+            document.getElementById('save-status').textContent = "Saved!";
+            document.getElementById('save-status').classList.remove('hidden');
         });
 
         function showTab(tabId) {
